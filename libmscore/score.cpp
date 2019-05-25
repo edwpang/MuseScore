@@ -2859,10 +2859,11 @@ void Score::padToggle(Pad n)
             if (cr && cr->isRest() && cr->measure()->isMMRest()) {
                   Measure* m = cr->measure()->mmRestFirst();
                   if (m)
-                        cr = m->findChordRest(Fraction(0,1), 0);
+                        cr = m->findChordRest(m->tick(), 0);
                   }
 
-            crs.push_back(cr);
+            if (cr)
+                  crs.push_back(cr);
             }
       else {
             const auto elements = selection().uniqueElements();
@@ -4630,7 +4631,7 @@ void MasterScore::setLayout(const Fraction& t)
 //    the value of the expressive parameter.
 //---------------------------------------------------------
 
-void MasterScore::updateExpressive(MasterSynthesizer* m)
+void MasterScore::updateExpressive(Synthesizer* synth)
       {
       SynthesizerState s = synthesizerState();
       SynthesizerGroup g = s.group("master");
@@ -4643,13 +4644,13 @@ void MasterScore::updateExpressive(MasterSynthesizer* m)
                   }
             }
 
-      updateExpressive(m, (method != 0));
+      updateExpressive(synth, (method != 0));
       }
 
 
-void MasterScore::updateExpressive(MasterSynthesizer* m, bool expressive, bool force /* = false */)
+void MasterScore::updateExpressive(Synthesizer* synth, bool expressive, bool force /* = false */)
       {
-      if (!m)
+      if (!synth)
             return;
 
       if (!force) {
@@ -4669,7 +4670,7 @@ void MasterScore::updateExpressive(MasterSynthesizer* m, bool expressive, bool f
             const InstrumentList* il = p->instruments();
             for (auto it = il->begin(); it != il->end(); it++) {
                   Instrument* i = it->second;
-                  i->switchExpressive(this, m, expressive, force);
+                  i->switchExpressive(this, synth, expressive, force);
                   }
             }
 
@@ -4681,12 +4682,12 @@ void MasterScore::updateExpressive(MasterSynthesizer* m, bool expressive, bool f
 //    just updateExpressive, in most cases.
 //---------------------------------------------------------
 
-void MasterScore::rebuildAndUpdateExpressive(MasterSynthesizer* m)
+void MasterScore::rebuildAndUpdateExpressive(Synthesizer* synth)
       {
       // Rebuild midi mappings to make sure we have playback channels
       rebuildMidiMapping();
 
-      updateExpressive(m);
+      updateExpressive(synth);
 
       // Rebuild midi mappings again to be safe
       rebuildMidiMapping();

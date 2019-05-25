@@ -1347,7 +1347,7 @@ static void setTpc(Note* oNote, int tpc, int& newTpc1, int& newTpc2)
 ///   Increment/decrement pitch of note by one or by an octave.
 //---------------------------------------------------------
 
-void Score::upDown(bool up, UpDownMode mode, bool updateSelection)
+void Score::upDown(bool up, UpDownMode mode)
       {
       QList<Note*> el = selection().uniqueNotes();
 
@@ -1515,12 +1515,6 @@ void Score::upDown(bool up, UpDownMode mode, bool updateSelection)
             // play new note with velocity 80 for 0.3 sec:
             setPlayNote(true);
             }
-
-      if (updateSelection) {
-            _selection.clear();
-            for (Note* note : el)
-                  _selection.add(note);
-            }
       }
 
 //---------------------------------------------------------
@@ -1528,15 +1522,15 @@ void Score::upDown(bool up, UpDownMode mode, bool updateSelection)
 ///   Add the delta to the pitch of note.
 //---------------------------------------------------------
 
-void Score::upDownDelta(int pitchDelta, bool updateSelection)
+void Score::upDownDelta(int pitchDelta)
       {
       while (pitchDelta > 0) {
-            upDown(true, UpDownMode::CHROMATIC, updateSelection);
+            upDown(true, UpDownMode::CHROMATIC);
             pitchDelta--;
             }
 
       while (pitchDelta < 0) {
-            upDown(false, UpDownMode::CHROMATIC, updateSelection);
+            upDown(false, UpDownMode::CHROMATIC);
             pitchDelta++;
             }
       }
@@ -1712,6 +1706,7 @@ void Score::changeAccidental(Note* note, AccidentalType accidental)
             changeAccidental2(ln, pitch, tpc);
             }
       setPlayNote(true);
+      setSelectionChanged(true);
       }
 
 //---------------------------------------------------------
@@ -1939,6 +1934,7 @@ static void resetElementPosition(void*, Element* e)
             return;
       e->undoResetProperty(Pid::AUTOPLACE);
       e->undoResetProperty(Pid::OFFSET);
+      e->setOffsetChanged(false);
       if (e->isSpanner())
             e->undoResetProperty(Pid::OFFSET2);
       }
@@ -3520,7 +3516,7 @@ void Score::cmdToggleVisible()
             if (e->isBracket())     // ignore
                   continue;
             if (e->isNoteDot() && selection().elements().contains(e->parent()))
-                  // already handled in Note::setProperty() and Rest::setProperty(); don't toggle twice
+                  // already handled in ScoreElement::undoChangeProperty(); don't toggle twice
                   continue;
             bool spannerSegment = e->isSpannerSegment();
             if (!spannerSegment || !spanners.contains(toSpannerSegment(e)->spanner()))

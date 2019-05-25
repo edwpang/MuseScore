@@ -667,8 +667,8 @@ class Score : public QObject, public ScoreElement {
       ChordRest* addClone(ChordRest* cr, const Fraction& tick, const TDuration& d);
       Rest* setRest(const Fraction& tick,  int track, const Fraction&, bool useDots, Tuplet* tuplet, bool useFullMeasureRest = true);
 
-      void upDown(bool up, UpDownMode, bool updateSelection = true);
-      void upDownDelta(int pitchDelta, bool updateSelection);
+      void upDown(bool up, UpDownMode);
+      void upDownDelta(int pitchDelta);
       ChordRest* searchNote(const Fraction& tick, int track) const;
 
       // undo/redo ops
@@ -831,7 +831,7 @@ class Score : public QObject, public ScoreElement {
       virtual const MStyle& style() const  { return _style;                  }
 
       void setStyle(const MStyle& s);
-      bool loadStyle(const QString&);
+      bool loadStyle(const QString&, bool ignore = false);
       bool saveStyle(const QString&);
 
       QVariant styleV(Sid idx) const  { return style().value(idx);   }
@@ -1321,9 +1321,9 @@ class MasterScore : public Score {
       int getNextFreeDrumMidiMapping();
       void enqueueMidiEvent(MidiInputEvent ev) { _midiInputQueue.enqueue(ev); }
       void updateChannel();
-      void rebuildAndUpdateExpressive(MasterSynthesizer* m);
-      void updateExpressive(MasterSynthesizer* m);
-      void updateExpressive(MasterSynthesizer* m, bool expressive, bool force = false);
+      void rebuildAndUpdateExpressive(Synthesizer* synth);
+      void updateExpressive(Synthesizer* synth);
+      void updateExpressive(Synthesizer* synth, bool expressive, bool force = false);
       void setSoloMute();
 
       void addExcerpt(Excerpt*);
