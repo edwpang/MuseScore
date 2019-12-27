@@ -14,7 +14,6 @@
 #define __QMLPLUGINAPI_H__
 
 #include "config.h"
-
 #include "../qmlplugin.h"
 #include "enums.h"
 #include "libmscore/mscore.h"
@@ -62,13 +61,16 @@ class PluginAPI : public Ms::QmlPlugin {
       Q_PROPERTY(QString version         READ version WRITE setVersion)
       /** Human-readable plugin description, displayed in Plugin Manager */
       Q_PROPERTY(QString description     READ description WRITE setDescription)
-      /** type may be dialog, dock, or not defined */
+      /** Type may be dialog, dock, or not defined */
       Q_PROPERTY(QString pluginType      READ pluginType WRITE setPluginType)
       /** Where to dock on main screen. Possible values: left, top, bottom, right */
       Q_PROPERTY(QString dockArea        READ dockArea WRITE setDockArea)
-      /** Whether the plugin requires an existing score to run */
+      /** Whether the plugin requires an existing score to run, default is `true` */
       Q_PROPERTY(bool requiresScore      READ requiresScore WRITE setRequiresScore)
-      /** Number of MIDI ticks for 1/4 note (read only) */
+      /**
+       * \brief Number of MIDI ticks for 1/4 note (read only)
+       * \see \ref ticklength
+       */
       Q_PROPERTY(int division            READ division)
       /** Complete version number of MuseScore in the form: MMmmuu (read only) */
       Q_PROPERTY(int mscoreVersion       READ mscoreVersion       CONSTANT)
@@ -80,9 +82,10 @@ class PluginAPI : public Ms::QmlPlugin {
       Q_PROPERTY(int mscoreUpdateVersion READ mscoreUpdateVersion CONSTANT)
       /** (read-only) */
       Q_PROPERTY(qreal mscoreDPI         READ mscoreDPI)
-      /** current score, if any (read only) */
+      /** Current score, if any (read only) */
       Q_PROPERTY(Ms::PluginAPI::Score* curScore     READ curScore)
-//TODO-ws      Q_PROPERTY(QQmlListProperty<Ms::Score> scores READ scores)
+      /** List of currently open scores (read only).\n \since MuseScore 3.2 */
+      Q_PROPERTY(QQmlListProperty<Ms::PluginAPI::Score> scores READ scores)
 
       // Should be initialized in qmlpluginapi.cpp
       /// Contains Ms::ElementType enumeration values
@@ -115,13 +118,22 @@ class PluginAPI : public Ms::QmlPlugin {
       DECLARE_API_ENUM( OrnamentStyle,    ornamentStyleEnum       )
       /// Contains Ms::GlissandoStyle enumeration values
       /// \note In MuseScore 2.X this enumeration was available as
-      /// MScoreCHROMATIC, MScore.WHITE_KEYS, MScore.BLACK_KEYS,
+      /// MScore.CHROMATIC, MScore.WHITE_KEYS, MScore.BLACK_KEYS,
       /// MScore.DIATONIC.
       DECLARE_API_ENUM( GlissandoStyle,   glissandoStyleEnum      )
       /// Contains Ms::Tid enumeration values
       /// \note In MuseScore 2.X this enumeration was available as
       /// TextStyleType (TextStyleType.TITLE etc.)
       DECLARE_API_ENUM( Tid,              tidEnum                 )
+      /// Contains Ms::Align enumeration values
+      /// \since MuseScore 3.3
+      DECLARE_API_ENUM( Align,            alignEnum               )
+      /// Contains Ms::NoteType enumeration values
+      /// \since MuseScore 3.2.1
+      DECLARE_API_ENUM( NoteType,         noteTypeEnum            )
+      /// Contains Ms::PlayEventType enumeration values
+      /// \since MuseScore 3.3
+      DECLARE_API_ENUM( PlayEventType,    playEventTypeEnum       )
       /// Contains Ms::NoteHead::Type enumeration values
       /// \note In MuseScore 2.X this enumeration was available in
       /// NoteHead class (e.g. NoteHead.HEAD_QUARTER).
@@ -147,6 +159,61 @@ class PluginAPI : public Ms::QmlPlugin {
       /// Implement \p onRun() function in your plugin to handle this signal.
       void run();
 
+      /**
+       * Notifies plugin about changes in score state.
+       * Called after each user (or plugin) action which may have changed a
+       * score. Implement \p onScoreStateChanged() function in your plugin to
+       * handle this signal.
+       *
+       * \p state variable is available within the handler with following
+       * fields:
+       *
+       * - \p selectionChanged
+       * - \p excerptsChanged
+       * - \p instrumentsChanged
+       * - \p startLayoutTick
+       * - \p endLayoutTick
+       *
+       * If a plugin modifies score in this handler, then it should:
+       * 1. enclose all modifications within Score::startCmd() / Score::endCmd()
+       * 2. take care of preventing an infinite recursion, as plugin-originated
+       *    changes will trigger this signal again after calling Score::endCmd()
+       *
+       * Example:
+       * \code
+       * import QtQuick 2.0
+       * import MuseScore 3.0
+       *
+       * MuseScore {
+       *     menuPath: "Plugins.selectionChangeExample"
+       *     pluginType: "dock"
+       *     dockArea:   "left"
+       *     implicitHeight: 75 // necessary for dock widget to appear with nonzero height
+       *     implicitWidth: 150
+       *
+       *     Text {
+       *        // A label which will display pitch of the currently selected note
+       *        id: pitchLabel
+       *        anchors.fill: parent
+       *     }
+       *
+       *     onScoreStateChanged: {
+       *         if (state.selectionChanged) {
+       *             var el = curScore ? curScore.selection.elements[0] : null;
+       *             if (el && el.type == Element.NOTE)
+       *                 pitchLabel.text = el.pitch;
+       *             else
+       *                 pitchLabel.text = "no note selected";
+       *         }
+       *     }
+       * }
+       * \endcode
+       * \warning This functionality is considered experimental.
+       * This API may change in future versions of MuseScore.
+       * \since MuseScore 3.3
+       */
+      void scoreStateChanged(const QMap<QString, QVariant>& state);
+
    public:
       /// \cond MS_INTERNAL
       PluginAPI(QQuickItem* parent = 0);
@@ -154,6 +221,7 @@ class PluginAPI : public Ms::QmlPlugin {
       static void registerQmlTypes();
 
       void runPlugin() override            { emit run();       }
+      void endCmd(const QMap<QString, QVariant>& stateInfo) override { emit scoreStateChanged(stateInfo); }
 
       Score* curScore() const;
       QQmlListProperty<Score> scores();
@@ -161,6 +229,7 @@ class PluginAPI : public Ms::QmlPlugin {
 
       Q_INVOKABLE Ms::PluginAPI::Score* newScore(const QString& name, const QString& part, int measures);
       Q_INVOKABLE Ms::PluginAPI::Element* newElement(int);
+      Q_INVOKABLE void removeElement(Ms::PluginAPI::Element* wrapped);
       Q_INVOKABLE void cmd(const QString&);
       /** \cond PLUGIN_API \private \endcond */
       Q_INVOKABLE Ms::PluginAPI::MsProcess* newQProcess();

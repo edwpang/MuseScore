@@ -86,6 +86,8 @@ class BarLine final : public Element {
       virtual void layout() override;
       void layout2();
       virtual void scanElements(void* data, void (*func)(void*, Element*), bool all=true) override;
+      virtual void setTrack(int t) override;
+      virtual void setScore(Score* s) override;
       virtual void add(Element*) override;
       virtual void remove(Element*) override;
       virtual bool acceptDrop(EditData&) const override;
@@ -106,7 +108,6 @@ class BarLine final : public Element {
       virtual void endEdit(EditData&) override;
       virtual void editDrag(EditData&) override;
       virtual void endEditDrag(EditData&) override;
-      virtual void updateGrips(EditData&) const override;
       virtual Shape shape() const override;
 
       ElementList* el()                  { return &_el; }
@@ -140,6 +141,12 @@ class BarLine final : public Element {
 
       virtual QString accessibleInfo() const override;
       virtual QString accessibleExtraInfo() const override;
+
+      EditBehavior normalModeEditBehavior() const override { return EditBehavior::Edit; }
+      int gripsCount() const override { return 2; }
+      Grip initialEditModeGrip() const override { return Grip::END; }
+      Grip defaultGrip() const override { return Grip::START; }
+      std::vector<QPointF> gripsPositions(const EditData&) const override;
 
       static const std::vector<BarLineTableItem> barLineTable;
       };

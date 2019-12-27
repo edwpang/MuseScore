@@ -145,6 +145,7 @@
             <transposingClefType>G</transposingClefType>
             </Clef>
           <TimeSig>
+            <linkedMain/>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
@@ -158,6 +159,9 @@
         <multiMeasureRest>32</multiMeasureRest>
         <voice>
           <TimeSig>
+            <linked>
+              <indexDiff>-1</indexDiff>
+              </linked>
             <sigN>4</sigN>
             <sigD>4</sigD>
             </TimeSig>
@@ -167,8 +171,7 @@
             </Rest>
           <BarLine>
             <subtype>end</subtype>
-            <linked>
-              </linked>
+            <linkedMain/>
             </BarLine>
           </voice>
         </Measure>
@@ -420,7 +423,9 @@
             </Rest>
           <BarLine>
             <subtype>end</subtype>
-            <linkedMain/>
+            <linked>
+              <indexDiff>-1</indexDiff>
+              </linked>
             </BarLine>
           </voice>
         </Measure>

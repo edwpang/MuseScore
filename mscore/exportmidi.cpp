@@ -208,7 +208,7 @@ void ExportMidi::writeHeader()
 //    export midi file
 //    return false on error
 //
-//    The 3rd and 4th versions of write create a temporary, unitialized synth state
+//    The 3rd and 4th versions of write create a temporary, uninitialized synth state
 //    so we can render the midi - it should fall back correctly to the defaults, with a warning.
 //    These should only be used for tests. When actually rendering midi as a user action,
 //    make sure to use the 1st and 2nd versions, passing the global musescore synth state
@@ -293,6 +293,8 @@ bool ExportMidi::write(QIODevice* device, bool midiExpandRepeats, bool exportRPN
                         for (auto i = events.begin(); i != events.end(); ++i) {
                               const NPlayEvent& event = i->second;
 
+                              if (event.isMuted())
+                                    continue;
                               if (event.discard() == staffIdx + 1 && event.velo() > 0)
                                     // turn note off so we can restrike it in another track
                                     track.insert(pauseMap.addPauseTicks(i->first), MidiEvent(ME_NOTEON, channel,

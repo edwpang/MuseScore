@@ -30,7 +30,6 @@ struct LayoutContext {
       Page* page               { 0 };
       int curPage              { 0 };      // index in Score->page()s
       Fraction tick            { 0, 1 };
-      Fraction sig;
 
       QList<System*> systemList;          // reusable systems
       std::set<Spanner*> processedSpanners;
@@ -39,6 +38,7 @@ struct LayoutContext {
       System* curSystem        { 0 };
 
       MeasureBase* systemOldMeasure;
+      MeasureBase* pageOldMeasure;
       bool rangeDone           { false };
 
       MeasureBase* prevMeasure { 0 };
@@ -48,13 +48,12 @@ struct LayoutContext {
       Fraction startTick;
       Fraction endTick;
 
-      LayoutContext() = default;
+      LayoutContext(Score* s) : score(s) {}
       LayoutContext(const LayoutContext&) = delete;
       LayoutContext& operator=(const LayoutContext&) = delete;
       ~LayoutContext();
 
       void layoutLinear();
-      void layoutMeasureLinear(MeasureBase*);
 
       void layout();
       int adjustMeasureNo(MeasureBase*);

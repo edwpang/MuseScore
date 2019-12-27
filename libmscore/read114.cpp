@@ -672,9 +672,9 @@ static void readFingering114(XmlReader& e, Fingering* fing)
             else if (tag == "frame") {
                   auto frame = e.readInt();
                   if (frame)
-                        if (isStringNumber) //default value is circle for stringnumber, square is setted in tag circle
+                        if (isStringNumber) //default value is circle for stringnumber, square is set in tag circle
                               fing->setFrameType(FrameType::CIRCLE);
-                        else //default value is square for stringnumber, circle is setted in tag circle
+                        else //default value is square for stringnumber, circle is set in tag circle
                               fing->setFrameType(FrameType::SQUARE);
                   else
                         fing->setFrameType(FrameType::NO_FRAME);
@@ -2106,7 +2106,7 @@ static void readMeasure(Measure* m, int staffIdx, XmlReader& e)
             else if (tag == "visible")
                   m->setStaffVisible(staffIdx, e.readInt());
             else if (tag == "slashStyle")
-                  m->setStaffSlashStyle(staffIdx, e.readInt());
+                  m->setStaffStemless(staffIdx, e.readInt());
             else if (tag == "Beam") {
                   Beam* beam = new Beam(m->score());
                   beam->setTrack(e.track());
@@ -2171,6 +2171,7 @@ static void readMeasure(Measure* m, int staffIdx, XmlReader& e)
                   }
             }
       e.checkTuplets();
+      m->connectTremolo();
       }
 
 //---------------------------------------------------------
@@ -2479,9 +2480,6 @@ static void readInstrument(Instrument *i, Part* p, XmlReader& e)
                  e.unknown();
             }
 
-      // Read single-note dynamics from template
-      i->setSingleNoteDynamicsFromTemplate();
-
       if (i->channel().empty()) {      // for backward compatibility
             Channel* a = new Channel;
             a->setName(Channel::DEFAULT_NAME);
@@ -2497,6 +2495,15 @@ static void readInstrument(Instrument *i, Part* p, XmlReader& e)
             if (i->channel()[0]->bank() == 0)
                   i->channel()[0]->setBank(128);
             }
+
+      // Fix user bank controller read
+      for (Channel* c : i->channel()) {
+            if (c->bank() == 0)
+                  c->setUserBankController(false);
+            }
+
+      // Read single-note dynamics from template
+      i->setSingleNoteDynamicsFromTemplate();
       }
 
 //---------------------------------------------------------

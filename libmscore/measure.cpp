@@ -95,7 +95,7 @@ class MStaff {
       bool _hasVoices        { false };    ///< indicates that MStaff contains more than one voice,
                                           ///< this changes some layout rules
       bool _visible          { true  };
-      bool _slashStyle       { false };
+      bool _stemless         { false };
 #ifndef NDEBUG
       bool _corrupted        { false };
 #endif
@@ -125,8 +125,8 @@ class MStaff {
       bool visible() const           { return _visible;    }
       void setVisible(bool val)      { _visible = val;     }
 
-      bool slashStyle() const        { return _slashStyle; }
-      void setSlashStyle(bool val)   { _slashStyle = val;  }
+      bool stemless() const          { return _stemless; }
+      void setStemless(bool val)     { _stemless = val;  }
 
 #ifndef NDEBUG
       bool corrupted() const         { return _corrupted; }
@@ -150,7 +150,7 @@ MStaff::MStaff(const MStaff& m)
       _vspacerUp   = 0;
       _vspacerDown = 0;
       _visible     = m._visible;
-      _slashStyle  = m._slashStyle;
+      _stemless  = m._stemless;
 #ifndef NDEBUG
       _corrupted   = m._corrupted;
 #endif
@@ -285,7 +285,7 @@ StaffLines* Measure::staffLines(int staffIdx)                   { return _mstave
 Spacer* Measure::vspacerDown(int staffIdx) const                { return _mstaves[staffIdx]->vspacerDown(); }
 Spacer* Measure::vspacerUp(int staffIdx) const                  { return _mstaves[staffIdx]->vspacerUp(); }
 void Measure::setStaffVisible(int staffIdx, bool visible)       { _mstaves[staffIdx]->setVisible(visible); }
-void Measure::setStaffSlashStyle(int staffIdx, bool slashStyle) { _mstaves[staffIdx]->setSlashStyle(slashStyle); }
+void Measure::setStaffStemless(int staffIdx, bool stemless)     { _mstaves[staffIdx]->setStemless(stemless); }
 
 #ifndef NDEBUG
 bool Measure::corrupted(int staffIdx) const                     { return _mstaves[staffIdx]->corrupted(); }
@@ -555,9 +555,10 @@ void Measure::layout2()
             Spacer* sp = ms->vspacerDown();
             if (sp) {
                   sp->layout();
-                  int n = score()->staff(staffIdx)->lines(tick()) - 1;
+                  Staff* staff = score()->staff(staffIdx);
+                  int n = staff->lines(tick()) - 1;
                   qreal y = system()->staff(staffIdx)->y();
-                  sp->setPos(_spatium * .5, y + n * _spatium);
+                  sp->setPos(_spatium * .5, y + n * _spatium * staff->mag(tick()));
                   }
             sp = ms->vspacerUp();
             if (sp) {
@@ -864,6 +865,7 @@ void Measure::add(Element* e)
                               _mstaves[e->staffIdx()]->setVspacerDown(sp);
                               break;
                         }
+                  sp->setGap(sp->gap());  // trigger relayout
                   }
                   break;
             case ElementType::JUMP:
@@ -1000,7 +1002,8 @@ void Measure::remove(Element* e)
                         // st currently points to an list element that is about to be removed
                         // make a copy now to use on undo/redo
                         StaffType* st = new StaffType(*stc->staffType());
-                        staff->removeStaffType(tick());
+                        if (!tick().isZero())
+                              staff->removeStaffType(tick());
                         stc->setStaffType(st);
                         }
                   MeasureBase::remove(e);
@@ -1564,7 +1567,7 @@ Element* Measure::drop(EditData& data)
                         spacer->setGap(gap);
                         }
                   score()->undoAddElement(spacer);
-                  score()->setLayoutAll();
+                  triggerLayout();
                   return spacer;
                   }
 
@@ -1907,8 +1910,10 @@ void Measure::write(XmlWriter& xml, int staff, bool writeSystemElements, bool fo
             }
       if (!mstaff->visible())
             xml.tag("visible", mstaff->visible());
-      if (mstaff->slashStyle())
-            xml.tag("slashStyle", mstaff->slashStyle());
+      if (mstaff->stemless()) {
+            xml.tag("slashStyle", mstaff->stemless()); // for backwards compatibility
+            xml.tag("stemless", mstaff->stemless());
+            }
 
       int strack = staff * VOICES;
       int etrack = strack + VOICES;
@@ -2022,8 +2027,8 @@ void Measure::read(XmlReader& e, int staffIdx)
                   }
             else if (tag == "visible")
                   _mstaves[staffIdx]->setVisible(e.readInt());
-            else if (tag == "slashStyle")
-                  _mstaves[staffIdx]->setSlashStyle(e.readInt());
+            else if ((tag == "slashStyle") || (tag == "stemless"))
+                  _mstaves[staffIdx]->setStemless(e.readInt());
             else if (tag == "SystemDivider") {
                   SystemDivider* sd = new SystemDivider(score());
                   sd->read(e);
@@ -2052,6 +2057,8 @@ void Measure::read(XmlReader& e, int staffIdx)
             e.setTick(lm->tick() + lm->ticks());
             }
       e.setCurrentMeasure(nullptr);
+
+      connectTremolo();
       }
 
 //---------------------------------------------------------
@@ -2293,6 +2300,7 @@ void Measure::readVoice(XmlReader& e, int staffIdx, bool irregular)
                || tag == "Symbol"
                || tag == "Tempo"
                || tag == "StaffText"
+               || tag == "Sticking"
                || tag == "SystemText"
                || tag == "RehearsalMark"
                || tag == "InstrumentChange"
@@ -2363,7 +2371,7 @@ void Measure::readVoice(XmlReader& e, int staffIdx, bool irregular)
                         }
                   startingBeam = beam;
                   }
-            else if (tag == "Segment")
+            else if (tag == "Segment" && segment)
                   segment->read(e);
             else if (tag == "Ambitus") {
                   Ambitus* range = new Ambitus(score());
@@ -2389,7 +2397,8 @@ void Measure::readVoice(XmlReader& e, int staffIdx, bool irregular)
                   }
             }
       if (fermata) {
-            segment = getSegment(SegmentType::EndBarLine, e.tick());
+            SegmentType st = (e.tick() == endTick() ? SegmentType::EndBarLine : SegmentType::ChordRest);
+            segment = getSegment(st, e.tick());
             segment->add(fermata);
             fermata = nullptr;
             }
@@ -2451,13 +2460,13 @@ bool Measure::visible(int staffIdx) const
       }
 
 //---------------------------------------------------------
-//   slashStyle
+//   stemless
 //---------------------------------------------------------
 
-bool Measure::slashStyle(int staffIdx) const
+bool Measure::stemless(int staffIdx) const
       {
       const Staff* staff = score()->staff(staffIdx);
-      return staff->slashStyle(tick()) || _mstaves[staffIdx]->slashStyle() || staff->staffType(tick())->slashStyle();
+      return staff->stemless(tick()) || _mstaves[staffIdx]->stemless() || staff->staffType(tick())->stemless();
       }
 
 //---------------------------------------------------------
@@ -2517,6 +2526,52 @@ void Measure::scanElements(void* data, void (*func)(void*, Element*), bool all)
             if (!s->enabled())
                   continue;
             s->scanElements(data, func, all);
+            }
+      }
+
+//---------------------------------------------------------
+//   connectTremolo
+///   Connect two-notes tremolo and update duration types
+///   for the involved chords.
+//---------------------------------------------------------
+
+void Measure::connectTremolo()
+      {
+      const int ntracks = score()->ntracks();
+      constexpr SegmentType st = SegmentType::ChordRest;
+      for (Segment* s = first(st); s; s = s->next(st)) {
+            for (int i = 0; i < ntracks; ++i) {
+                  Element* e = s->element(i);
+                  if (!e || !e->isChord())
+                        continue;
+
+                  Chord* c = toChord(e);
+                  Tremolo* tremolo = c->tremolo();
+                  if (tremolo && tremolo->twoNotes()) {
+                        // Ensure correct duration type for chord
+                        c->setDurationType(tremolo->durationType());
+
+                        // If it is the first tremolo's chord, find the second
+                        // chord for tremolo, if needed.
+                        if (!tremolo->chord1())
+                              tremolo->setChords(c, tremolo->chord2());
+                        else if (tremolo->chord1() != c || tremolo->chord2())
+                              continue;
+
+                        for (Segment* ls = s->next(st); ls; ls = ls->next(st)) {
+                              if (Element* element = ls->element(i)) {
+                                    if (!element->isChord()) {
+                                          qDebug("cannot connect tremolo");
+                                          continue;
+                                          }
+                                    Chord* nc = toChord(element);
+                                    tremolo->setChords(c, nc);
+                                    nc->setTremolo(tremolo);
+                                    break;
+                                    }
+                              }
+                        }
+                  }
             }
       }
 
@@ -2806,6 +2861,27 @@ bool Measure::isOnlyDeletedRests(int track) const
       }
 
 //---------------------------------------------------------
+//   isOnlyDeletedRests
+//---------------------------------------------------------
+
+bool Measure::isOnlyDeletedRests(int track, const Fraction& stick, const Fraction& etick) const
+      {
+      static const SegmentType st { SegmentType::ChordRest };
+      for (const Segment* s = first(st); s; s = s->next(st)) {
+            if (s->segmentType() != st || !s->element(track))
+                  continue;
+            ChordRest* cr = toChordRest(s->element(track));
+            if (cr->tick() + cr->globalTicks() <= stick)
+                  continue;
+            if (cr->tick() >= etick)
+                  return true;
+            if (!cr->isRest() || !toRest(cr)->isGap())
+                  return false;
+            }
+      return true;
+      }
+
+//---------------------------------------------------------
 //   stretchedLen
 //---------------------------------------------------------
 
@@ -3019,7 +3095,7 @@ bool Measure::setProperty(Pid propertyId, const QVariant& value)
             default:
                   return MeasureBase::setProperty(propertyId, value);
             }
-      score()->setLayout(tick());
+      triggerLayout();
       return true;
       }
 
@@ -3118,16 +3194,29 @@ Element* Measure::nextElementStaff(int staff)
       Element* e = score()->selection().element();
       if (!e && !score()->selection().elements().isEmpty())
             e = score()->selection().elements().first();
+
+      // handle measure elements
+      if (e->parent() == this) {
+            auto i = std::find(el().begin(), el().end(), e);
+            if (i != el().end()) {
+                  if (++i != el().end()) {
+                        Element* resElement = *i;
+                        if (resElement)
+                              return resElement;
+                        }
+                  }
+            }
+
       for (; e && e->type() != ElementType::SEGMENT; e = e->parent()) {
             ;
       }
       Segment* seg = toSegment(e);
-      Segment* nextSegment = seg->next();
+      Segment* nextSegment = seg ? seg->next() : first();
       Element* next = seg->firstElementOfSegment(nextSegment, staff);
       if (next)
             return next;
 
-      return score()->firstElement();
+      return score()->lastElement();
       }
 
 //---------------------------------------------------------
@@ -3136,13 +3225,29 @@ Element* Measure::nextElementStaff(int staff)
 
 Element* Measure::prevElementStaff(int staff)
       {
+      Element* e = score()->selection().element();
+      if (!e && !score()->selection().elements().isEmpty())
+            e = score()->selection().elements().first();
+
+      // handle measure elements
+      if (e->parent() == this) {
+            auto i = std::find(el().rbegin(), el().rend(), e);
+            if (i != el().rend()) {
+                  if (++i != el().rend()) {
+                        Element* resElement = *i;
+                        if (resElement)
+                              return resElement;
+                        }
+                  }
+            }
+
       Measure* prevM = prevMeasureMM();
       if (prevM) {
             Segment* seg = prevM->last();
             if (seg)
-                  seg->lastElement(staff);
+                  return seg->lastElement(staff);
             }
-      return score()->lastElement();
+      return score()->firstElement();
       }
 
 //---------------------------------------------------------
@@ -3368,7 +3473,7 @@ BarLineType Measure::endBarLineType() const
 
 //---------------------------------------------------------
 //   endBarLineType
-//    Assume all barlines have same visiblity if there is more
+//    Assume all barlines have same visibility if there is more
 //    than one.
 //---------------------------------------------------------
 
@@ -3384,8 +3489,8 @@ bool Measure::endBarLineVisible() const
 
 void Measure::triggerLayout() const
       {
-      score()->setLayout(tick());
-      score()->setLayout(endTick());
+      if (prev() || next()) // avoid triggering layout before getting added to a score
+            score()->setLayout(tick(), endTick(), 0, score()->nstaves() - 1, this);
       }
 
 //---------------------------------------------------------
@@ -3464,8 +3569,10 @@ qreal Measure::createEndBarLines(bool isLastMeasureInSystem)
 #endif
       qreal oldWidth = width();
 
-      if (nm && nm->repeatStart() && !isLastMeasureInSystem && !repeatEnd()) {
-            // no barline, use StartBarLine of next measure
+      if (nm && nm->repeatStart() && !repeatEnd() && !isLastMeasureInSystem && next() == nm) {
+            // we may skip barline at end of a measure immediately before a start repeat:
+            // next measure is repeat start, this measure is not a repeat end,
+            // this is not last measure of system, no intervening frame
             if (!seg)
                   return 0.0;
             seg->setEnabled(false);
@@ -3673,14 +3780,17 @@ void Measure::addSystemHeader(bool isFirstSystem)
             if (isFirstSystem || score()->styleB(Sid::genClef)) {
                   // find the clef type at the previous tick
                   ClefTypeList cl = staff->clefType(tick() - Fraction::fromTicks(1));
-                  // look for a clef change at the end of the previous measure
-                  if (prevMeasure()) {
-                        Segment* s = prevMeasure()->findSegment(SegmentType::Clef, tick());
-                        if (s) {
-                              Clef* c = toClef(s->element(track));
-                              if (c)
-                                    cl = c->clefTypeList();
-                              }
+                  Segment* s = nullptr;
+                  if (prevMeasure())
+                        // look for a clef change at the end of the previous measure
+                        s = prevMeasure()->findSegment(SegmentType::Clef, tick());
+                  else if (isMMRest())
+                        // look for a header clef at the beginning of the first underlying measure
+                        s = mmRestFirst()->findFirstR(SegmentType::HeaderClef, Fraction(0,1));
+                  if (s) {
+                        Clef* c = toClef(s->element(track));
+                        if (c)
+                              cl = c->clefTypeList();
                         }
                   Clef* clef;
                   if (!cSegment) {
@@ -3787,7 +3897,7 @@ void Measure::addSystemHeader(bool isFirstSystem)
                                     // a transposing instrument using a different key sig.
                                     // To prevent this from making the wrong key sig display, remove any key
                                     // sigs on staves where the key in this measure is C.
-                                    score()->undo(new RemoveElement(e));
+                                    kSegment->remove(e);
                                     }
                               }
 
@@ -3854,13 +3964,18 @@ void Measure::addSystemTrailer(Measure* nm)
 
       // locate a time sig. in the next measure and, if found,
       // check if it has court. sig. turned off
-      TimeSig* ts;
+      TimeSig* ts = nullptr;
       bool showCourtesySig = false;
       Segment* s = findSegmentR(SegmentType::TimeSigAnnounce, _rtick);
       if (score()->genCourtesyTimesig() && !isFinalMeasure && !score()->floatMode()) {
             Segment* tss = nm->findSegmentR(SegmentType::TimeSig, Fraction(0,1));
             if (tss) {
-                  ts = toTimeSig(tss->element(0));
+                  int nstaves = score()->nstaves();
+                  for (int track = 0; track < nstaves * VOICES; track += VOICES) {
+                        ts = toTimeSig(tss->element(track));
+                        if (ts)
+                              break;
+                        }
                   if (ts && ts->showCourtesySig()) {
                         showCourtesySig = true;
                         // if due, create a new courtesy time signature for each staff
@@ -3870,7 +3985,6 @@ void Measure::addSystemTrailer(Measure* nm)
                               add(s);
                               }
                         s->setEnabled(true);
-                        int nstaves = score()->nstaves();
                         for (int track = 0; track < nstaves * VOICES; track += VOICES) {
                               TimeSig* nts = toTimeSig(tss->element(track));
                               if (!nts)
@@ -3985,7 +4099,7 @@ void Measure::removeSystemTrailer()
             changed = true;
             }
       setTrailer(false);
-      if (changed)
+      if (system() && changed)
             computeMinWidth();
       }
 
@@ -4106,7 +4220,8 @@ void Measure::computeMinWidth(Segment* s, qreal x, bool isSystemHeader)
             qreal w;
 
             if (ns) {
-                  if (isSystemHeader && ns->isChordRestType()) {        // this is the system header gap
+                  if (isSystemHeader && (ns->isChordRestType() || (ns->isClefType() && !ns->header()))) {
+                        // this is the system header gap
                         w = s->minHorizontalDistance(ns, true);
                         isSystemHeader = false;
                         }

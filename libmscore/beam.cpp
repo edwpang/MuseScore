@@ -1488,6 +1488,26 @@ void Beam::computeStemLen(const std::vector<ChordRest*>& cl, qreal& py1, int bea
             slope   = (bm.s * _spatium4) / dx;
       int dy = (c1->line(_up) - c1->line(!_up)) * 2;
 
+      // Ensure the resulting stem lengths are not less than a reasonable minimum
+      qreal firstStemLenPoints = bm.l * _spStaff4;
+      const qreal sgn = (firstStemLenPoints < 0 ? -1.0 : 1.0);
+      const QPointF p1 = cl[0]->stemPosBeam();
+      for (const ChordRest* cr : cl) {
+            if (cr->isChord()) {
+                  const qreal minAbsLen = toChord(cr)->minAbsStemLength();
+
+                  const QPointF p2 = cr->stemPosBeam();
+
+                  const qreal crStemAbsLen = std::abs((p2.x() - p1.x()) * slope - p2.y() + p1.y() + firstStemLenPoints);
+
+                  if (crStemAbsLen < minAbsLen) {
+                        const qreal dl = minAbsLen - crStemAbsLen;
+                        firstStemLenPoints += sgn * dl;
+                        bm.l += sgn * dl / _spStaff4;
+                        }
+                  }
+            }
+
       py1 += (dy + bm.l) * _spStaff4;
       }
 
@@ -2036,7 +2056,6 @@ void Beam::write(XmlWriter& xml) const
 
 void Beam::read(XmlReader& e)
       {
-      QPointF p1, p2;
       qreal _spatium = spatium();
       if (score()->mscVersion() < 301)
             _id = e.intAttribute("id");
@@ -2116,23 +2135,28 @@ void Beam::editDrag(EditData& ed)
       BeamEditData* bed = static_cast<BeamEditData*>(ed.getData(this));
       BeamFragment* f = fragments[bed->editFragment];
       qreal y1 = f->py1[idx];
-      qreal y2 = f->py2[idx] + dy;
+      qreal y2 = f->py2[idx];
+
       if (ed.curGrip == Grip::START)
             y1 += dy;
+      else if (ed.curGrip == Grip::END)
+            y2 += dy;
 
       qreal _spatium = spatium();
-      undoChangeProperty(Pid::BEAM_POS, QPointF(y1 / _spatium, y2 / _spatium));
+      // Because of the logic in Beam::setProperty(),
+      // changing Pid::BEAM_POS only has an effect if Pid::USER_MODIFIED is true.
       undoChangeProperty(Pid::USER_MODIFIED, true);
+      undoChangeProperty(Pid::BEAM_POS, QPointF(y1 / _spatium, y2 / _spatium));
       undoChangeProperty(Pid::GENERATED, false);
 
       triggerLayout();
       }
 
 //---------------------------------------------------------
-//   updateGrips
+//   gripsPositions
 //---------------------------------------------------------
 
-void Beam::updateGrips(EditData& ed) const
+std::vector<QPointF> Beam::gripsPositions(const EditData& ed) const
       {
       int idx = (_direction == Direction::AUTO || _direction == Direction::DOWN) ? 0 : 1;
       BeamEditData* bed = static_cast<BeamEditData*>(ed.getData(this));
@@ -2155,8 +2179,11 @@ void Beam::updateGrips(EditData& ed) const
             }
 
       int y = pagePos().y();
-      ed.grip[0].translate(QPointF(c1->stemPosX() + c1->pageX(), f->py1[idx] + y));
-      ed.grip[1].translate(QPointF(c2->stemPosX() + c2->pageX(), f->py2[idx] + y));
+
+      return {
+            QPointF(c1->stemPosX() + c1->pageX(), f->py1[idx] + y),
+            QPointF(c2->stemPosX() + c2->pageX(), f->py2[idx] + y)
+            };
       }
 
 //---------------------------------------------------------
@@ -2197,8 +2224,6 @@ void Beam::reset()
 
 void Beam::startEdit(EditData& ed)
       {
-      ed.grips   = 2;
-      ed.curGrip = Grip::END;
       BeamEditData* bed = new BeamEditData();
       bed->e    = this;
       bed->editFragment = 0;
@@ -2384,10 +2409,7 @@ bool Beam::setProperty(Pid propertyId, const QVariant& v)
                         return false;
                   break;
             }
-      if (!_elements.empty()) {
-            score()->setLayout(_elements.front()->tick());
-            score()->setLayout(_elements.back()->tick());
-            }
+      triggerLayout();
       setGenerated(false);
       return true;
       }
@@ -2471,5 +2493,29 @@ Fraction Beam::rtick() const
       {
       return _elements.empty() ? Fraction(0, 1) : _elements.front()->segment()->rtick();
       }
-}
 
+//---------------------------------------------------------
+//   iconType
+//---------------------------------------------------------
+
+IconType Beam::iconType(Mode mode)
+      {
+      switch (mode) {
+            case Mode::BEGIN:
+                  return IconType::SBEAM;
+            case Mode::MID:
+                  return IconType::MBEAM;
+            case Mode::NONE:
+                  return IconType::NBEAM;
+            case Mode::BEGIN32:
+                  return IconType::BEAM32;
+            case Mode::BEGIN64:
+                  return IconType::BEAM64;
+            case Mode::AUTO:
+                  return IconType::AUTOBEAM;
+            default:
+                  break;
+            }
+      return IconType::NONE;
+      }
+}

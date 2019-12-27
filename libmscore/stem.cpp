@@ -252,12 +252,12 @@ bool Stem::readProperties(XmlReader& e)
       }
 
 //---------------------------------------------------------
-//   updateGrips
+//   gripsPositions
 //---------------------------------------------------------
 
-void Stem::updateGrips(EditData& ed) const
+std::vector<QPointF> Stem::gripsPositions(const EditData&) const
       {
-      ed.grip[0].translate(pagePos() + line.p2());
+      return { pagePos() + line.p2() };
       }
 
 //---------------------------------------------------------
@@ -267,8 +267,6 @@ void Stem::updateGrips(EditData& ed) const
 void Stem::startEdit(EditData& ed)
       {
       Element::startEdit(ed);
-      ed.grips   = 1;
-      ed.curGrip = Grip::START;
       ElementEditData* eed = ed.getData(this);
       eed->pushProperty(Pid::USER_LEN);
       }
@@ -342,6 +340,8 @@ QVariant Stem::getProperty(Pid propertyId) const
                   return lineWidth();
             case Pid::USER_LEN:
                   return userLen();
+            case Pid::STEM_DIRECTION:
+                  return QVariant::fromValue<Direction>(chord()->stemDirection());
             default:
                   return Element::getProperty(propertyId);
             }
@@ -359,6 +359,9 @@ bool Stem::setProperty(Pid propertyId, const QVariant& v)
                   break;
             case Pid::USER_LEN:
                   setUserLen(v.toDouble());
+                  break;
+            case Pid::STEM_DIRECTION:
+                  chord()->setStemDirection(v.value<Direction>());
                   break;
             default:
                   return Element::setProperty(propertyId, v);
@@ -378,6 +381,8 @@ QVariant Stem::propertyDefault(Pid id) const
                   return 0.0;
 //            case Pid::LINE_WIDTH:
 //                  return score()->styleP(Sid::stemWidth);
+            case Pid::STEM_DIRECTION:
+                  return QVariant::fromValue<Direction>(Direction::AUTO);
             default:
                   return Element::propertyDefault(id);
             }

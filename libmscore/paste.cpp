@@ -81,6 +81,7 @@ bool Score::pasteStaff(XmlReader& e, Segment* dst, int dstStaff, Fraction scale)
       {
       Q_ASSERT(dst->isChordRestType());
 
+      std::vector<Harmony*> pastedHarmony;
       QList<Chord*> graceNotes;
       Beam* startingBeam = nullptr;
       Tuplet* tuplet = nullptr;
@@ -341,10 +342,15 @@ bool Score::pasteStaff(XmlReader& e, Segment* dst, int dstStaff, Fraction scale)
 
                               Measure* m = tick2measure(tick);
                               Segment* seg = m->undoGetSegment(SegmentType::ChordRest, tick);
-                              for (Element* el : seg->findAnnotations(ElementType::HARMONY, e.track(), e.track()))
-                                    undoRemoveElement(el);
+                              // remove pre-existing chords on this track
+                              // but be sure not to remove any we just added
+                              for (Element* el : seg->findAnnotations(ElementType::HARMONY, e.track(), e.track())) {
+                                    if (std::find(pastedHarmony.begin(), pastedHarmony.end(), el) == pastedHarmony.end())
+                                          undoRemoveElement(el);
+                                    }
                               harmony->setParent(seg);
                               undoAddElement(harmony);
+                              pastedHarmony.push_back(harmony);
                               }
                         else if (tag == "Dynamic"
                            || tag == "Symbol"
@@ -395,6 +401,8 @@ bool Score::pasteStaff(XmlReader& e, Segment* dst, int dstStaff, Fraction scale)
                               breath->setTrack(e.track());
                               Fraction tick = doScale ? (e.tick() - dstTick) * scale + dstTick : e.tick();
                               Measure* m = tick2measure(tick);
+                              if (m->tick() == tick)
+                                    m = m->prevMeasure();
                               Segment* segment = m->undoGetSegment(SegmentType::Breath, tick);
                               breath->setParent(segment);
                               undoChangeElement(segment->element(e.track()), breath);
@@ -468,7 +476,7 @@ bool Score::pasteStaff(XmlReader& e, Segment* dst, int dstStaff, Fraction scale)
             int endStaff = dstStaff + staves;
             if (endStaff > nstaves())
                   endStaff = nstaves();
-            //check and add truly invisible rests insted of gaps
+            //check and add truly invisible rests instead of gaps
             //TODO: look if this could be done different
             Measure* dstM = tick2measure(dstTick);
             Measure* endM = tick2measure(dstTick + tickLen);
@@ -955,11 +963,12 @@ void Score::cmdPaste(const QMimeData* ms, MuseScoreView* view, Fraction scale)
       if ((_selection.isSingle() || _selection.isList()) && ms->hasFormat(mimeSymbolFormat)) {
             QByteArray data(ms->data(mimeSymbolFormat));
 
-            XmlReader e(data);
             QPointF dragOffset;
             Fraction duration(1, 4);
-            ElementType type = Element::readType(e, &dragOffset, &duration);
-            e.setPasteMode(true);
+            std::unique_ptr<Element> el(Element::readMimeData(this, data, &dragOffset, &duration));
+
+            if (!el)
+                  return;
 
             QList<Element*> els;
             if (_selection.isSingle())
@@ -967,38 +976,38 @@ void Score::cmdPaste(const QMimeData* ms, MuseScoreView* view, Fraction scale)
             else
                   els.append(_selection.elements());
 
-            if (type != ElementType::INVALID) {
-                  Element* el = Element::create(type, this);
-                  if (el) {
-                        el->read(e);
-                        for (Element* target : els) {
-                              el->setTrack(target->track());
-                              Element* nel = el->clone();
-                              addRefresh(target->abbox());   // layout() ?!
-                              EditData ddata(view);
-                              ddata.view        = view;
-                              ddata.dropElement = nel;
-                              ddata.duration    = duration;
-                              if (target->acceptDrop(ddata)) {
-                                    // dropping an element of the same type is likely to replace it
-                                    // thus invaldiating the selection
-                                    ElementType targetType = target->type();
-                                    if (targetType == type)
-                                          deselect(target);
-                                    target->drop(ddata);
-                                    if (targetType == type)
-                                          select(nel);
-                                    if (_selection.element())
-                                          addRefresh(_selection.element()->abbox());
-                                    }
-                              else
-                                    delete nel;
+            for (Element* target : els) {
+                  el->setTrack(target->track());
+                  Element* nel = el->clone();
+                  addRefresh(target->abbox());   // layout() ?!
+                  EditData ddata(view);
+                  ddata.view        = view;
+                  ddata.dropElement = nel;
+                  if (target->acceptDrop(ddata)) {
+                        if (el->isNote()) {
+                              // dropping a note replaces and invalidates the target,
+                              // so we need to deselect it
+                              ElementType targetType = target->type();
+                              deselect(target);
+
+                              // perform the drop
+                              target->drop(ddata);
+
+                              // if the target is a rest rather than a note,
+                              // a new note is generated, and nel becomes invalid as well
+                              // (ChordRest::drop() will select it for us)
+                              if (targetType == ElementType::NOTE)
+                                    select(nel);
                               }
+                        else {
+                              target->drop(ddata);
+                              }
+                        if (_selection.element())
+                              addRefresh(_selection.element()->abbox());
                         }
-                  delete el;
+                  else
+                        delete nel;
                   }
-            else
-                  qDebug("cannot read type");
             }
       else if ((_selection.isRange() || _selection.isList()) && ms->hasFormat(mimeStaffListFormat)) {
             ChordRest* cr = 0;
@@ -1019,7 +1028,7 @@ void Score::cmdPaste(const QMimeData* ms, MuseScoreView* view, Fraction scale)
                   MScore::setError(NO_DEST);
                   return;
                   }
-            else if (cr->tuplet()) {
+            else if (cr->tuplet() && cr->tick() != cr->topTuplet()->tick()) {
                   MScore::setError(DEST_TUPLET);
                   return;
                   }
@@ -1050,10 +1059,6 @@ void Score::cmdPaste(const QMimeData* ms, MuseScoreView* view, Fraction scale)
                   }
             if (cr == 0) {
                   MScore::setError(NO_DEST);
-                  return;
-                  }
-            else if (cr->tuplet()) {
-                  MScore::setError(DEST_TUPLET);
                   return;
                   }
             else {
@@ -1087,7 +1092,6 @@ void Score::cmdPaste(const QMimeData* ms, MuseScoreView* view, Fraction scale)
                   EditData ddata(view);
                   ddata.view       = view;
                   ddata.dropElement    = nel;
-                  // ddata.duration   = duration;
                   target->drop(ddata);
                   if (_selection.element())
                         addRefresh(_selection.element()->abbox());

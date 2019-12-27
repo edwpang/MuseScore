@@ -63,18 +63,6 @@ void SlurSegment::draw(QPainter* painter) const
       }
 
 //---------------------------------------------------------
-//   updateGrips
-//    return grip rectangles in page coordinates
-//---------------------------------------------------------
-
-void SlurSegment::updateGrips(EditData& ed) const
-      {
-      QPointF p(pagePos());
-      for (int i = 0; i < ed.grips; ++i)
-            ed.grip[i].translate(_ups[i].p + _ups[i].off + p);
-      }
-
-//---------------------------------------------------------
 //   searchCR
 //---------------------------------------------------------
 
@@ -96,15 +84,6 @@ static ChordRest* searchCR(Segment* segment, int startTrack, int endTrack)
                   }
             }
       return 0;
-      }
-
-//---------------------------------------------------------
-//   startEdit
-//---------------------------------------------------------
-
-void SlurSegment::startEdit(EditData& ed)
-      {
-      SlurTieSegment::startEdit(ed);
       }
 
 //---------------------------------------------------------
@@ -249,15 +228,6 @@ void SlurSegment::changeAnchor(EditData& ed, Element* element)
       }
 
 //---------------------------------------------------------
-//   endEdit
-//---------------------------------------------------------
-
-void SlurSegment::endEdit(EditData& ed)
-      {
-      SlurTieSegment::endEdit(ed);
-      }
-
-//---------------------------------------------------------
 //   computeBezier
 //    compute help points of slur bezier segment
 //---------------------------------------------------------
@@ -391,26 +361,6 @@ void SlurSegment::computeBezier(QPointF p6o)
             _shape.add(re);
             start = point;
             }
-      }
-
-//---------------------------------------------------------
-//   slurDistance
-//---------------------------------------------------------
-
-inline static qreal slurDistance(const Shape& shape, const QPointF& pt, qreal sdist, bool up)
-      {
-      qreal ddy;
-      if (up) {
-            ddy = -shape.bottomDistance(pt) + sdist;
-            if (ddy <= 0.0)   // assume no more collisions
-                  ddy = 0.0;
-            }
-      else {
-            ddy = shape.topDistance(pt) - sdist;
-            if (ddy >= 0.0)
-                  ddy = 0.0;
-            }
-      return ddy;
       }
 
 //---------------------------------------------------------

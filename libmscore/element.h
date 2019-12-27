@@ -30,12 +30,10 @@ namespace Ms {
 #define VOICES 4
 #endif
 
-class ConnectorInfoReader;
 class XmlReader;
 class XmlWriter;
 enum class SymId;
 enum class Pid;
-enum class OffsetType : char;
 class StaffType;
 
 //---------------------------------------------------------
@@ -138,10 +136,8 @@ class EditData {
       QPointF dragOffset;
       Element* element                 { 0     };
       Element* dropElement             { 0     };
-      Fraction duration                { Fraction(1,4) };
 
       EditData(MuseScoreView* v) : view(v) {}
-      void init();
       void clearData();
 
       ElementEditData* getData(const Element*) const;
@@ -172,6 +168,12 @@ class Element : public ScoreElement {
       mutable ElementFlags _flags;
                                   ///< valid after call to layout()
       uint _tag;                  ///< tag bitmask
+
+   public:
+      enum class EditBehavior {
+            SelectOnly,
+            Edit,
+            };
 
   protected:
       mutable int _z;
@@ -300,10 +302,16 @@ class Element : public ScoreElement {
       virtual void editCut(EditData&)            {}
       virtual void editCopy(EditData&)           {}
 
-      virtual void updateGrips(EditData&) const  {}
+      void updateGrips(EditData&) const;
       virtual bool nextGrip(EditData&) const;
       virtual bool prevGrip(EditData&) const;
       virtual QPointF gripAnchor(Grip) const     { return QPointF(); }
+
+      virtual EditBehavior normalModeEditBehavior() const { return EditBehavior::SelectOnly; }
+      virtual int gripsCount() const { return 0; }
+      virtual Grip initialEditModeGrip() const { return Grip::NO_GRIP; }
+      virtual Grip defaultGrip() const { return Grip::NO_GRIP; }
+      virtual std::vector<QPointF> gripsPositions(const EditData&) const { return std::vector<QPointF>(); }
 
       int track() const                       { return _track; }
       virtual void setTrack(int val)          { _track = val;  }
@@ -333,7 +341,6 @@ class Element : public ScoreElement {
       //@ Returns the human-readable name of the element type
       //@ Returns the name of the element type
       virtual Q_INVOKABLE QString _name() const { return QString(name()); }
-      void dumpQPointF(const char*) const;
 
       virtual QColor color() const             { return _color; }
       QColor curColor() const;
@@ -344,6 +351,7 @@ class Element : public ScoreElement {
       void undoSetVisible(bool v);
 
       static ElementType readType(XmlReader& node, QPointF*, Fraction*);
+      static Element* readMimeData(Score* score, const QByteArray& data, QPointF*, Fraction*);
 
       virtual QByteArray mimeData(const QPointF&) const;
 /**
@@ -384,12 +392,6 @@ class Element : public ScoreElement {
 
       bool isPrintable() const;
       qreal point(const Spatium sp) const { return sp.val() * spatium(); }
-
-      //
-      // check element for consistency; return false if element
-      // is not valid
-      //
-      virtual bool check() const { return true; }
 
       static Ms::Element* create(Ms::ElementType type, Score*);
       static Element* name2Element(const QStringRef&, Score*);
@@ -470,13 +472,16 @@ class Element : public ScoreElement {
             }
 
       virtual void triggerLayout() const;
+      virtual void triggerLayoutAll() const;
       virtual void drawEditMode(QPainter*, EditData&);
 
-      void autoplaceSegmentElement(bool add = true);        // helper functions
-      void autoplaceMeasureElement(bool add = true);
+      void autoplaceSegmentElement(bool above, bool add);        // helper functions
+      void autoplaceMeasureElement(bool above, bool add);
+      void autoplaceSegmentElement(bool add = true) { autoplaceSegmentElement(placeAbove(), add); }
+      void autoplaceMeasureElement(bool add = true) { autoplaceMeasureElement(placeAbove(), add); }
       void autoplaceCalculateOffset(QRectF& r, qreal minDistance);
       qreal rebaseOffset(bool nox = true);
-      bool rebaseMinDistance(qreal& md, qreal& yd, qreal sp, qreal rebase, bool fix);
+      bool rebaseMinDistance(qreal& md, qreal& yd, qreal sp, qreal rebase, bool above, bool fix);
 
       qreal styleP(Sid idx) const;
       };
@@ -493,6 +498,7 @@ class Element : public ScoreElement {
 struct PropertyData {
       Pid id;
       QVariant data;
+      PropertyFlags f;
       };
 
 class ElementEditData {
@@ -500,7 +506,8 @@ class ElementEditData {
       Element* e;
       QList<PropertyData> propertyData;
 
-      void pushProperty(Pid pid) { propertyData.push_back(PropertyData({pid, e->getProperty(pid) })); }
+      virtual ~ElementEditData() = default;
+      void pushProperty(Pid pid) { propertyData.push_back(PropertyData({ pid, e->getProperty(pid), e->propertyFlags(pid) })); }
       };
 
 //---------------------------------------------------------

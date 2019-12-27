@@ -17,9 +17,11 @@
 #include "score.h"
 #include "part.h"
 #include "util.h"
-#ifndef TESTROOT
+#include "selection.h"
+#include "tie.h"
+
 #include "shortcut.h"
-#endif
+#include "musescore.h"
 #include "libmscore/musescoreCore.h"
 #include "libmscore/score.h"
 
@@ -40,6 +42,9 @@ Enum* PluginAPI::directionHEnum;
 Enum* PluginAPI::ornamentStyleEnum;
 Enum* PluginAPI::glissandoStyleEnum;
 Enum* PluginAPI::tidEnum;
+Enum* PluginAPI::alignEnum;
+Enum* PluginAPI::noteTypeEnum;
+Enum* PluginAPI::playEventTypeEnum;
 Enum* PluginAPI::noteHeadTypeEnum;
 Enum* PluginAPI::noteHeadGroupEnum;
 Enum* PluginAPI::noteValueTypeEnum;
@@ -67,6 +72,9 @@ void PluginAPI::initEnums() {
       PluginAPI::ornamentStyleEnum = wrapEnum<Ms::MScore::OrnamentStyle>();
       PluginAPI::glissandoStyleEnum = wrapEnum<Ms::GlissandoStyle>();
       PluginAPI::tidEnum = wrapEnum<Ms::Tid>();
+      PluginAPI::alignEnum = wrapEnum<Ms::Align>();
+      PluginAPI::noteTypeEnum = wrapEnum<Ms::NoteType>();
+      PluginAPI::playEventTypeEnum = wrapEnum<Ms::PlayEventType>();
       PluginAPI::noteHeadTypeEnum = wrapEnum<Ms::NoteHead::Type>();
       PluginAPI::noteHeadGroupEnum = wrapEnum<Ms::NoteHead::Group>();
       PluginAPI::noteValueTypeEnum = wrapEnum<Ms::Note::ValueType>();
@@ -176,6 +184,19 @@ Element* PluginAPI::newElement(int elementType)
       }
 
 //---------------------------------------------------------
+//   removeElement
+///   Disposes of an Element and its children.
+///   \param Element type.
+///   \since MuseScore 3.3
+//---------------------------------------------------------
+
+void PluginAPI::removeElement(Ms::PluginAPI::Element* wrapped)
+      {
+      Ms::Score* score = wrapped->element()->score();
+      score->deleteItem(wrapped->element());
+      }
+
+//---------------------------------------------------------
 //   newScore
 //---------------------------------------------------------
 
@@ -199,22 +220,14 @@ Score* PluginAPI::newScore(const QString& name, const QString& part, int measure
 //---------------------------------------------------------
 //   cmd
 //---------------------------------------------------------
+
 void PluginAPI::cmd(const QString& s)
       {
-#ifdef TESTROOT
-      // TODO: testing this function requires including
-      // shortcuts system to mtest testutils library
-      // as well as some way to execute these commands
-      // without MuseScore instance.
-      Q_UNUSED(s);
-      qFatal("PluginAPI::cmd is not testable currently");
-#else
       Shortcut* sc = Shortcut::getShortcut(qPrintable(s));
       if (sc)
             msc()->cmd(sc->action());
       else
             qDebug("PluginAPI:cmd: not found <%s>", qPrintable(s));
-#endif
       }
 
 //---------------------------------------------------------
@@ -304,7 +317,7 @@ void PluginAPI::registerQmlTypes()
             return;
 
       const char* enumErr = "You can't create an enumeration";
-//TODO-ws            qmlRegisterType<MsProcess>  ("MuseScore", 3, 0, "QProcess");
+      qmlRegisterType<MsProcess>  ("MuseScore", 3, 0, "QProcess");
       qmlRegisterType<FileIO, 1>  ("FileIO",    3, 0, "FileIO");
       //-----------mscore bindings
       qmlRegisterUncreatableMetaObject(Ms::staticMetaObject, "MuseScore", 3, 0, "Ms", enumErr);
@@ -313,8 +326,10 @@ void PluginAPI::registerQmlTypes()
       if (-1 == qmlRegisterType<PluginAPI>  ("MuseScore", 3, 0, "MuseScore"))
             qWarning("qmlRegisterType failed: MuseScore");
 
+      qmlRegisterUncreatableType<Enum>("MuseScore", 3, 0, "MuseScoreEnum", "Cannot create an enumeration");
+
 //             qmlRegisterType<MScore>     ("MuseScore", 3, 0, "MScore");
-//TODO-ws            qmlRegisterType<MsScoreView>("MuseScore", 3, 0, "ScoreView");
+      qmlRegisterType<ScoreView>("MuseScore", 3, 0, "ScoreView");
 
       qmlRegisterType<Cursor>("MuseScore", 3, 0, "Cursor");
       qmlRegisterType<ScoreElement>();
@@ -326,6 +341,14 @@ void PluginAPI::registerQmlTypes()
       qmlRegisterType<Measure>();
       qmlRegisterType<Part>();
       qmlRegisterType<Excerpt>();
+      qmlRegisterType<Selection>();
+      qmlRegisterType<Tie>();
+      qmlRegisterType<PlayEvent>("MuseScore", 3, 0, "PlayEvent");
+      //qmlRegisterType<Hook>();
+      //qmlRegisterType<Stem>();
+      //qmlRegisterType<StemSlash>();
+      //qmlRegisterType<Beam>();
+
 #if 0
       qmlRegisterType<NoteHead>   ("MuseScore", 1, 0, "NoteHead");
       qmlRegisterType<Accidental> ("MuseScore", 1, 0, "Accidental");
@@ -343,10 +366,6 @@ void PluginAPI::registerQmlTypes()
       qmlRegisterType<Lyrics>     ("MuseScore", 1, 0, "Lyrics");
       qmlRegisterType<FiguredBassItem>("MuseScore", 1, 0, "FiguredBassItem");
       qmlRegisterType<LayoutBreak>("MuseScore", 1, 0, "LayoutBreak");
-      qmlRegisterType<Hook>       ("MuseScore", 1, 0, "Hook");
-      qmlRegisterType<Stem>       ("MuseScore", 1, 0, "Stem");
-      qmlRegisterType<StemSlash>  ("MuseScore", 1, 0, "StemSlash");
-      qmlRegisterType<Beam>       ("MuseScore", 1, 0, "Beam");
       qmlRegisterType<BarLine>    ("MuseScore", 1, 0, "BarLine");
 
 

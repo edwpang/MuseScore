@@ -13,6 +13,7 @@
 #include "toolbarEditor.h"
 #include "musescore.h"
 #include "workspace.h"
+#include "icons.h"
 
 namespace Ms {
 
@@ -60,6 +61,11 @@ ToolbarEditor::ToolbarEditor(QWidget* parent)
       connect(up, SIGNAL(clicked()), SLOT(upAction()));
       connect(down, SIGNAL(clicked()), SLOT(downAction()));
       connect(buttonBox, SIGNAL(accepted()), SLOT(accepted()));
+      
+      up->setIcon(*icons[int(Icons::arrowUp_ICON)]);
+      down->setIcon(*icons[int(Icons::arrowDown_ICON)]);
+      add->setIcon(*icons[int(Icons::goPrevious_ICON)]);
+      remove->setIcon(*icons[int(Icons::goNext_ICON)]);
 
       MuseScore::restoreGeometry(this);
       }
@@ -70,8 +76,8 @@ ToolbarEditor::ToolbarEditor(QWidget* parent)
 
 void ToolbarEditor::init()
       {
-      QString name = Workspace::currentWorkspace->name();
-      bool writable = !Workspace::currentWorkspace->readOnly();
+      QString name = WorkspacesManager::currentWorkspace()->name();
+      bool writable = !WorkspacesManager::currentWorkspace()->readOnly();
       if (!writable) {
             name += " " + tr("(not changeable)");
             }
@@ -94,7 +100,7 @@ void ToolbarEditor::init()
 
 void ToolbarEditor::accepted()
       {
-      if (Workspace::currentWorkspace->readOnly())
+      if (WorkspacesManager::currentWorkspace()->readOnly())
             return;
       // Updates the toolbars
       mscore->setNoteInputMenuEntries(*(new_toolbars->at(0)));
@@ -103,7 +109,7 @@ void ToolbarEditor::accepted()
       mscore->populateNoteInputMenu();
       mscore->populateFileOperations();
       mscore->populatePlaybackControls();
-      Workspace::currentWorkspace->setDirty(true);
+      WorkspacesManager::currentWorkspace()->setDirty(true);
       }
 
 //---------------------------------------------------------

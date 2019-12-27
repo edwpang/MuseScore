@@ -42,7 +42,6 @@ void TextBase::editInsertText(TextCursor* cursor, const QString& s)
 
 void TextBase::startEdit(EditData& ed)
       {
-      ed.grips = 0;
       TextEditData* ted = new TextEditData(this);
       ted->e = this;
       ted->cursor.setRow(0);
@@ -344,15 +343,15 @@ bool TextBase::edit(EditData& ed)
                                     }
                               break;
                         case Qt::Key_B:
-                              insertSym(ed, SymId::accidentalFlat);
-                              return true;
+                              s = "\u266d"; // Unicode flat
+                              break;
                         case Qt::Key_NumberSign:
-                              insertSym(ed, SymId::accidentalSharp);
-                              return true;
+                              s = "\u266f"; // Unicode sharp
+                              break;
                         case Qt::Key_H:
-                              insertSym(ed, SymId::accidentalNatural);
-                              return true;
-                        case Qt::Key_Space:
+                              s = "\u266e"; // Unicode natural
+                              break;
+                         case Qt::Key_Space:
                               insertSym(ed, SymId::space);
                               return true;
                         case Qt::Key_F:

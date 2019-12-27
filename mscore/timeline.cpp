@@ -57,7 +57,7 @@ void MuseScore::showTimeline(bool visible)
             }
       connect(_timeline, SIGNAL(visibilityChanged(bool)), act, SLOT(setChecked(bool)));
       connect(_timeline, SIGNAL(closed(bool)), act, SLOT(setChecked(bool)));
-      _timeline->setVisible(visible);
+      reDisplayDockWidget(_timeline, visible);
 
       getAction("toggle-timeline")->setChecked(visible);
       if (visible)
@@ -1232,7 +1232,7 @@ void Timeline::barline_meta(Segment* seg, int* stagger, int pos)
                         repeat_text = QString("End repeat");
                         break;
                   case BarLineType::END_START_REPEAT:
-                        repeat_text = QString("End-start repeat");
+                        // actually an end repeat followed by a start repeat, so nothing needs to be done here
                         break;
                   case BarLineType::DOUBLE:
                         repeat_text = QString("Double barline");

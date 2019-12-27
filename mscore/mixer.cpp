@@ -56,8 +56,6 @@ double panToUserRange(char v) { return (v / 128.0) * 360.0; }
 double chorusToUserRange(char v) { return v * 100.0 / 128.0; }
 double reverbToUserRange(char v) { return v * 100.0 / 128.0; }
 
-const float minDecibels = -3;
-
 //0 to 100
 char userRangeToVolume(double v) { return (char)qBound(0, (int)(v / 100.0 * 128.0), 127); }
 //-180 to 180
@@ -72,14 +70,16 @@ char userRangeToReverb(double v) { return (char)qBound(0, (int)(v / 100.0 * 128.
 //---------------------------------------------------------
 
 Mixer::Mixer(QWidget* parent)
-    : QDockWidget("Mixer", parent),
+    : QDockWidget(qApp->translate("Mixer", "Mixer"), parent),
       showDetails(true),
       trackHolder(nullptr)
       {
-      setupUi(this);
 
-      setWindowFlags(Qt::Tool);
-      setWindowFlags(this->windowFlags() & ~Qt::WindowContextHelpButtonHint);
+      // note: because of setupUi side-effects (generating a showEvent) it's critical
+      // that enablePlay is created first.
+      enablePlay = new EnablePlayForWidget(this);
+
+      setupUi(this);
       setAllowedAreas(Qt::DockWidgetAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea));
 
       trackAreaLayout = new QHBoxLayout;
@@ -88,25 +88,28 @@ Mixer::Mixer(QWidget* parent)
       trackArea->setLayout(trackAreaLayout);
 
       mixerDetails = new MixerDetails(this);
-      detailsLayout = new QGridLayout(this);
+      detailsLayout = new QGridLayout();
 
       detailsLayout->addWidget(mixerDetails);
       detailsLayout->setContentsMargins(0, 0, 0, 0);
       detailsArea->setLayout(detailsLayout);
 
       //Range in decibels
-      masterSlider->setMaxValue(0);
+      float minDecibels = synti->minGainAsDecibels;
+      float maxDecibels = synti->maxGainAsDecibels;
+      float currentDecibels = synti->gainAsDecibels();
+      masterSlider->setMaxValue(maxDecibels);
       masterSlider->setMinValue(minDecibels);
       masterSlider->setNumMinorTicks(4);
       masterSlider->setNumMajorTicks(3);
       masterSlider->setHilightColor(QColor(51, 153, 255));
-      float decibels = qBound(minDecibels, log10(synti->gain()), 0.0f);
-      masterSlider->setValue(decibels);
+      masterSlider->setValue(currentDecibels);
+      masterSlider->setDoubleClickValue(synti->defaultGainAsDecibels);
 
-      masterSpin->setMaximum(0);
+      masterSpin->setMaximum(maxDecibels);
       masterSpin->setMinimum(minDecibels);
-      masterSpin->setSingleStep(.1);
-      masterSpin->setValue(decibels);
+      masterSpin->setSingleStep(1);
+      masterSpin->setValue(currentDecibels);
 
 
       QIcon iconSliderHead;
@@ -120,8 +123,6 @@ Mixer::Mixer(QWidget* parent)
       connect(tracks_scrollArea->horizontalScrollBar(), SIGNAL(rangeChanged(int, int)), SLOT(adjustScrollPosition(int, int)));
       connect(tracks_scrollArea->horizontalScrollBar(), SIGNAL(valueChanged(int)), SLOT(checkKeptScrollValue(int)));
 
-      enablePlay = new EnablePlayForWidget(this);
-      readSettings();
       retranslate(true);
       }
 
@@ -144,7 +145,7 @@ void Mixer::showDetailsToggled(bool shown)
 
 void Mixer::synthGainChanged(float)
       {
-      float decibels = qBound(minDecibels, log10f(synti->gain()), 0.0f);
+      float decibels = synti->gainAsDecibels();
 
       masterSlider->blockSignals(true);
       masterSlider->setValue(decibels);
@@ -182,8 +183,7 @@ void Mixer::keepScrollPosition()
 
 void Mixer::masterVolumeChanged(double decibels)
       {
-      float gain = qBound(0.0f, powf(10, (float)decibels), 1.0f);
-      synti->setGain(gain);
+      synti->setGainAsDecibels(decibels);
 
       masterSlider->blockSignals(true);
       masterSlider->setValue(decibels);
@@ -200,7 +200,8 @@ void Mixer::masterVolumeChanged(double decibels)
 
 void Mixer::on_partOnlyCheckBox_toggled(bool checked)
       {
-      if (!_activeScore->excerpt())
+
+      if (!_activeScore || !_activeScore->excerpt())
             return;
 
       mscore->setPlayPartOnly(checked);
@@ -220,7 +221,7 @@ void Mixer::on_partOnlyCheckBox_toggled(bool checked)
 
 void Mixer::retranslate(bool firstTime)
       {
-      setWindowTitle(tr("Mixer"));
+      setWindowTitle(qApp->translate("Mixer", "Mixer"));
       if (!firstTime) {
             for (int i = 0; i < trackAreaLayout->count(); i++) {
                   PartEdit* p = getPartAtIndex(i);
@@ -249,7 +250,20 @@ void Mixer::showEvent(QShowEvent* e)
       QWidget::showEvent(e);
       activateWindow();
       setFocus();
+      getAction("toggle-mixer")->setChecked(true);
       }
+
+
+//---------------------------------------------------------
+//   hideEvent
+//---------------------------------------------------------
+
+void Mixer::hideEvent(QHideEvent* e)
+      {
+      QWidget::hideEvent(e);
+      getAction("toggle-mixer")->setChecked(false);
+      }
+
 
 //---------------------------------------------------------
 //   eventFilter
@@ -463,45 +477,31 @@ void Mixer::notifyTrackSelected(MixerTrack* track)
 
 
 //---------------------------------------------------------
-//   writeSettings
-//---------------------------------------------------------
-
-void Mixer::writeSettings()
-      {
-      MuseScore::saveGeometry(this);
-      }
-
-//---------------------------------------------------------
-//   readSettings
-//---------------------------------------------------------
-
-void Mixer::readSettings()
-      {
-      resize(QSize(480, 600)); //ensure default size if no geometry in settings
-      MuseScore::restoreGeometry(this);
-      }
-
-
-//---------------------------------------------------------
 //   showMixer
 //---------------------------------------------------------
 
-void MuseScore::showMixer(bool val)
+void MuseScore::showMixer(bool visible)
       {
-      if (!cs)
-            return;
+      QAction* toggleMixerAction = getAction("toggle-mixer");
 
-      QAction* a = getAction("toggle-mixer");
+      if (!synti) {
+            toggleMixerAction->setChecked(false);
+            return;
+            }
+
       if (mixer == 0) {
             mixer = new Mixer(this);
             mscore->stackUnder(mixer);
             if (synthControl)
                   connect(synthControl, SIGNAL(soundFontChanged()), mixer, SLOT(updateTrack()));
             connect(synti, SIGNAL(soundFontChanged()), mixer, SLOT(updateTracks()));
-            connect(mixer, SIGNAL(closed(bool)), a, SLOT(setChecked(bool)));
+            connect(mixer, SIGNAL(closed(bool)), toggleMixerAction, SLOT(setChecked(bool)));
+            mixer->setFloating(false);
+            addDockWidget(Qt::RightDockWidgetArea, mixer);
             }
+      reDisplayDockWidget(mixer, visible);
+      toggleMixerAction->setChecked(visible);
       mixer->setScore(cs);
-      mixer->setVisible(val);
       }
 
 }

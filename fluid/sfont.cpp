@@ -831,9 +831,9 @@ unsigned char SFont::READB()
 //   READC
 //---------------------------------------------------------
 
-char SFont::READC()
+signed char SFont::READC()
       {
-      char var;
+      signed char var;
       safe_fread(&var, 1);
       return var;
       }
@@ -1710,7 +1710,7 @@ void SFont::safe_fread(void* buf, int count)
       {
       if (f.read((char*)buf, count) != count) {
             if (f.atEnd())
-                  throw(QString("EOF while attemping to read %1 bytes").arg(count));
+                  throw(QString("EOF while attempting to read %1 bytes").arg(count));
             else
                   throw(QString("File read failed"));
             }

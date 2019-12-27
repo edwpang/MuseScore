@@ -113,7 +113,8 @@ void Lyrics::read(XmlReader& e)
       if (!isStyled(Pid::OFFSET) && !e.pasteMode()) {
             // fix offset for pre-3.1 scores
             // 3.0: y offset was meaningless if autoplace is set
-            if (autoplace() && score()->mscoreVersion() < "3.1") {
+            QString version = masterScore()->mscoreVersion();
+            if (autoplace() && !version.isEmpty() && version < "3.1") {
                   QPointF off = propertyDefault(Pid::OFFSET).toPointF();
                   ryoffset() = off.y();
                   }
@@ -234,8 +235,6 @@ void Lyrics::layout()
       // parse leading verse number and/or punctuation, so we can factor it into layout separately
       //
       bool hasNumber     = false; // _verseNumber;
-      qreal centerAdjust = 0.0;
-      qreal leftAdjust   = 0.0;
 
       // find:
       // 1) string of numbers and non-word characters at start of syllable
@@ -243,29 +242,20 @@ void Lyrics::layout()
       // 3) string of non-word characters at end of syllable
       //QRegularExpression leadingPattern("(^[\\d\\W]+)([^\\d\\W]+)");
 
+      const QString text = plainText();
+      QString leading;
+      QString trailing;
+
       if (score()->styleB(Sid::lyricsAlignVerseNumber)) {
-            QString s = plainText();
             QRegularExpression punctuationPattern("(^[\\d\\W]*)([^\\d\\W].*?)([\\d\\W]*$)", QRegularExpression::UseUnicodePropertiesOption);
-            QRegularExpressionMatch punctuationMatch = punctuationPattern.match(s);
+            QRegularExpressionMatch punctuationMatch = punctuationPattern.match(text);
             if (punctuationMatch.hasMatch()) {
                   // leading and trailing punctuation
-                  QString lp = punctuationMatch.captured(1);
-                  QString tp = punctuationMatch.captured(3);
-                  // actual lyric
+                  leading = punctuationMatch.captured(1);
+                  trailing = punctuationMatch.captured(3);
                   //QString actualLyric = punctuationMatch.captured(2);
-                  if (!lp.isEmpty() || !tp.isEmpty()) {
-//                        qDebug("create leading, trailing <%s> -- <%s><%s>", qPrintable(s), qPrintable(lp), qPrintable(tp));
-                        Lyrics leading(*this);
-                        leading.setPlainText(lp);
-                        leading.layout1();
-                        Lyrics trailing(*this);
-                        trailing.setPlainText(tp);
-                        trailing.layout1();
-                        leftAdjust = leading.width();
-                        centerAdjust = leading.width() - trailing.width();
-                        if (!lp.isEmpty() && lp[0].isDigit())
-                              hasNumber = true;
-                        }
+                  if (!leading.isEmpty() && leading[0].isDigit())
+                        hasNumber = true;
                   }
             }
 
@@ -292,6 +282,26 @@ void Lyrics::layout()
       rxpos() = o.x();
       qreal x = pos().x();
       TextBase::layout1();
+
+      qreal centerAdjust = 0.0;
+      qreal leftAdjust   = 0.0;
+
+      if (score()->styleB(Sid::lyricsAlignVerseNumber)) {
+            // Calculate leading and trailing parts widths. Lyrics
+            // should have text layout to be able to do it correctly.
+            Q_ASSERT(rows() != 0);
+            if (!leading.isEmpty() || !trailing.isEmpty()) {
+//                   qDebug("create leading, trailing <%s> -- <%s><%s>", qPrintable(text), qPrintable(leading), qPrintable(trailing));
+                  const TextBlock& tb = textBlock(0);
+
+                  const qreal leadingWidth = tb.xpos(leading.length(), this) - tb.boundingRect().x();
+                  const int trailingPos = text.length() - trailing.length();
+                  const qreal trailingWidth = tb.boundingRect().right() - tb.xpos(trailingPos, this);
+
+                  leftAdjust = leadingWidth;
+                  centerAdjust = leadingWidth - trailingWidth;
+                  }
+            }
 
       ChordRest* cr = chordRest();
 
@@ -476,7 +486,7 @@ Element* Lyrics::drop(EditData& data)
 void Lyrics::endEdit(EditData& ed)
       {
       TextBase::endEdit(ed);
-      score()->setLayoutAll();
+      triggerLayoutAll();
       }
 
 //---------------------------------------------------------
